@@ -1,34 +1,38 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use log::{error, info};
+use log::{info};
 use crate::handler;
 use crate::dev;
 
 const PROTOCOL_MAJOR: i16 = 1;
 const PROTOCOL_MINOR: i16 = 8;
 const PROTOCOL_NAME: &[u8] = b"Barrier";
-const CLIENT_NAME: &[u8] = b"rust-client";
+
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenSize { pub x: u16, pub y: u16}
 
 #[derive(Debug)]
 pub struct DeskflowClient {
     stream: TcpStream,
-    pub mouse: dev::Mouse,
+    pub fake_device: dev::FakeDevice,
     pub enter_sequence: u32,
+    pub screen_size: ScreenSize,
 }
 
 impl DeskflowClient {
     /// 连接到服务器
-    pub fn init(host: &str, port: u16) -> std::io::Result<Self> {
+    pub fn init(screen_size: ScreenSize, host: &str, port: u16) -> std::io::Result<Self> {
         // 先创建鼠标
-        let mouse = dev::Mouse::new()?;
+        let mouse = dev::FakeDevice::new(screen_size)?;
         // 连接服务器
         let addr = format!("{}:{}", host, port);
         // println!("连接到 {}...", addr);
         let stream = TcpStream::connect(addr)?;
         Ok( Self { 
             stream,
-            mouse,
-            enter_sequence: 0
+            fake_device: mouse,
+            enter_sequence: 0,
+            screen_size,
         })
     }
 
@@ -97,7 +101,7 @@ impl DeskflowClient {
         let mut hello_back: Vec<u8> = PROTOCOL_NAME.to_vec();
         let mut major = PROTOCOL_MAJOR.to_be_bytes().to_vec();
         let mut minor = PROTOCOL_MINOR.to_be_bytes().to_vec();
-        let length = CLIENT_NAME.len() as u32;
+        let length = client_name.len() as u32;
         hello_back.append(&mut major);
         hello_back.append(&mut minor);
         hello_back.append(&mut length.to_be_bytes().to_vec());

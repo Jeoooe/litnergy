@@ -1,10 +1,10 @@
 // use std::net::TcpStream;
 
 use evdev_rs::enums::EV_KEY;
-use log::trace;
+use log::{trace, warn};
 
 use crate::{
-    client::DeskflowClient, dev::mouse::ZERO_TIMEVAL, helper
+    client::DeskflowClient, dev::ZERO_TIMEVAL, helper
 };
 
 // const CNOP: &[u8] = b"\x00\x00\x00\x04CNOP";
@@ -23,7 +23,8 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
         b"DMUP" => handle_dmup(msg, client),
         b"DMWM" => handle_dmwm(msg, client),
         b"COUT" => handle_cout(msg, client),
-        _ => {
+        b"EUNK" => handle_eunk(msg, client),
+        _ => { 
             let code = msg[..4].to_vec();
             if let Ok(code) = String::from_utf8(code) {
                 trace!("未编码消息: {}", code);
@@ -56,13 +57,13 @@ fn decode_mouse_button(code: u8) -> EV_KEY {
 
 // Mouse up
 fn handle_dmup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.mouse.button(decode_mouse_button(msg[4]),0, ZERO_TIMEVAL)?;
+    client.fake_device.button(decode_mouse_button(msg[4]),0, ZERO_TIMEVAL)?;
     Ok(())
 }
 
 // Mouse Press
 fn handle_dmdn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.mouse.button(decode_mouse_button(msg[4]),1, ZERO_TIMEVAL)?;
+    client.fake_device.button(decode_mouse_button(msg[4]),1, ZERO_TIMEVAL)?;
     Ok(())
 }
 
@@ -73,7 +74,7 @@ fn handle_dmwm(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let horizon = i16::from_be_bytes(code);
     code.clone_from_slice(&msg[6..8]);
     let vertical = i16::from_be_bytes(code);
-    client.mouse.scroll(horizon, vertical, ZERO_TIMEVAL)
+    client.fake_device.scroll(horizon, vertical, ZERO_TIMEVAL)
 }
 
 // Absolute Mouse Movement
@@ -85,21 +86,21 @@ fn handle_dmmv(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     code.clone_from_slice(&msg[6..8]);
     let abs_y = i16::from_be_bytes(code);
     // trace!("X: {}, Y: {}", abs_x, abs_y);
-    client.mouse.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)
+    client.fake_device.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)
 }
 
 fn handle_qinf(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     //**Format**: `"DINF%2i%2i%2i%2i%2i%2i%2i"`
     let mut msg = b"DINF".to_vec();
     let edge_cor = helper::get_edge_coordinate();
-    let screen_size = helper::get_screen_size();
+    let screen_size = client.screen_size;
     let warp = helper::get_warp_zone_size();
     let mouse = helper::get_mouse_position();
     let mut info = [
         edge_cor.0.to_be_bytes(),
         edge_cor.1.to_be_bytes(),
-        screen_size.0.to_be_bytes(),
-        screen_size.1.to_be_bytes(),
+        screen_size.x.to_be_bytes(),
+        screen_size.y.to_be_bytes(),
         warp.to_be_bytes(),
         mouse.0.to_be_bytes(),
         mouse.1.to_be_bytes(),
@@ -128,7 +129,7 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     code.clone_from_slice(&msg[8..12]);
     let sequence = u32::from_be_bytes(code);
 
-    client.mouse.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)?;
+    client.fake_device.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)?;
     client.enter_sequence = sequence;
     // TODO: KeyMask
     // Waiting for implementation of keyboard
@@ -139,4 +140,14 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
 fn handle_cout(_msg: &[u8], _client: &mut DeskflowClient) -> std::io::Result<()> {
     // TODO: send clipboard
     Ok(())
+}
+
+fn handle_eunk(_msg: &[u8], _client: &mut DeskflowClient) -> std::io::Result<()> {
+    warn!("Unknown client name for server.");
+    warn!("Please check spelling, server config, server host, or network.");
+    warn!("Note: Server does not auto‑accept new clients – add this client manually first.");
+    Err(std::io::Error::new(
+    std::io::ErrorKind::Other,
+    "Unknown client name",
+    ))
 }
