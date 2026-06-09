@@ -9,6 +9,7 @@ const PROTOCOL_MINOR: i16 = 8;
 const PROTOCOL_NAME: &[u8] = b"Barrier";
 const CLIENT_NAME: &[u8] = b"rust-client";
 
+#[derive(Debug)]
 pub struct DeskflowClient {
     stream: TcpStream,
     pub mouse: dev::Mouse,
@@ -23,7 +24,6 @@ impl DeskflowClient {
         // 连接服务器
         let addr = format!("{}:{}", host, port);
         // println!("连接到 {}...", addr);
-        info!("连接到 {}...", addr);
         let stream = TcpStream::connect(addr)?;
         Ok( Self { 
             stream,
@@ -79,17 +79,11 @@ impl DeskflowClient {
         let server_major = i16::from_be_bytes([hello_buf[7], hello_buf[8]]);
         let server_minor = i16::from_be_bytes([hello_buf[9], hello_buf[10]]);
 
-        info!("收到服务器 Hello:");
-        info!("  协议名: '{}'", protocol_name.trim_end_matches('\0'));
-        info!("  服务器版本: {}.{}", server_major, server_minor);
-        // info!("原始数据 {:?}", hello_buf);
+        info!("Receive Hello:");
+        info!("  Protocol name: '{}'", protocol_name.trim_end_matches('\0'));
+        info!("  Server version: {}.{}", server_major, server_minor);
 
-        // Step 2: 检查协议兼容性
         if server_major != PROTOCOL_MAJOR {
-            error!(
-                "协议版本不兼容！服务器版本: {}.{}",
-                server_major, server_minor
-            );
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Incompatible protocol version",
@@ -107,34 +101,28 @@ impl DeskflowClient {
         hello_back.append(&mut major);
         hello_back.append(&mut minor);
         hello_back.append(&mut length.to_be_bytes().to_vec());
-        hello_back.append(&mut CLIENT_NAME.to_vec());
+        hello_back.append(&mut client_name.as_bytes().to_vec());
 
         // println!("发送: {:?}", hello_back);
         self.write_vec(&mut hello_back)?;
 
-        info!("  客户端名: {}", client_name);
-        info!("  客户端版本: {}.{}", PROTOCOL_MAJOR, PROTOCOL_MINOR);
-
-        // Step 4: 等待可选的消息（如 QINF 查询）
-        // 在实际握手后，服务器可能会发送 QINF 等消息
-        // println!("握手完成！等待后续消息...");
+        info!("  Client version: {}.{}", PROTOCOL_MAJOR, PROTOCOL_MINOR);
 
         Ok(())
     }
 
-    /// 读取并显示一条消息（用于调试）
-    pub fn read_message(&mut self) -> std::io::Result<()> {
-        match self.read_from_server() {
-            Ok(msg) => {
-                if let Err(e) = handler::handle_message(&msg, self) {
-                    error!("{}", e);
+    pub fn run_client(&mut self) -> std::io::Result<()> {
+        loop {
+            match self.read_from_server() {
+                Ok(msg) => {
+                    if let Err(e) = handler::handle_message(&msg, self) {
+                        return Err(e);
+                    }
                 }
-                Ok(())
+                Err(e) => {
+                    return Err(e);
+                }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                Err(e)
-            }
-            Err(e) => Err(e),
         }
     }
 }

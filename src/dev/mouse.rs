@@ -8,6 +8,7 @@ use crate::helper;
 
 pub const ZERO_TIMEVAL: TimeVal = TimeVal::new(0, 0);
 
+#[derive(Debug)]
 pub struct Mouse {
     dev: UInputDevice,
 }
