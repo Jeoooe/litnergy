@@ -24,13 +24,16 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
         b"DMWM" => handle_dmwm(msg, client),
         b"COUT" => handle_cout(msg, client),
         b"EUNK" => handle_eunk(msg, client),
-        _ => { 
+        b"DKDL" => handle_dkdl(msg, client),
+        b"DKUP" => handle_dkup(msg, client),
+        b"DKRP" => Ok(()), // 重复按键由内核完成, 无需上报
+        _ => {  
             let code = msg[..4].to_vec();
             if let Ok(code) = String::from_utf8(code) {
                 trace!("未编码消息: {}", code);
-            } else {
-                trace!("未编码, 原始消息: {:?}", &msg[0..4]);
             }
+            trace!("原始消息: {:?}", msg);
+            
             Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "未知信息",
@@ -87,6 +90,22 @@ fn handle_dmmv(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let abs_y = i16::from_be_bytes(code);
     // trace!("X: {}, Y: {}", abs_x, abs_y);
     client.fake_device.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)
+}
+
+
+// Keyboards
+fn handle_dkdl(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
+    let mut code = [0u8; 2];
+    code.copy_from_slice(&msg[8..10]);
+    let keycode = u16::from_be_bytes(code);
+    client.fake_device.keyboard(keycode, 1, ZERO_TIMEVAL)
+}
+
+fn handle_dkup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
+    let mut code = [0u8; 2];
+    code.copy_from_slice(&msg[8..10]);
+    let keycode = u16::from_be_bytes(code);
+    client.fake_device.keyboard(keycode, 0, ZERO_TIMEVAL)
 }
 
 fn handle_qinf(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {

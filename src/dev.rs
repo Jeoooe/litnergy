@@ -1,10 +1,10 @@
 use std::io::ErrorKind;
-
+use log::{warn};
 use evdev_rs::{
     AbsInfo, DeviceWrapper, EnableCodeData, InputEvent, TimeVal, UInputDevice, UninitDevice, enums::*
 };
 
-use crate::{client::ScreenSize};
+use crate::{client::ScreenSize, helper};
 
 pub const ZERO_TIMEVAL: TimeVal = TimeVal::new(0, 0);
 
@@ -29,6 +29,12 @@ impl FakeDevice {
         // Note mouse keys have to be enabled for this to be detected
         // as a usable device, see: https://stackoverflow.com/a/64559658/6074942
         
+        for i in 0u32..helper::KEYCODE_LIMIT {
+            if let Some(code) = evdev_rs::enums::int_to_ev_key(i) {
+                u.enable(EventCode::EV_KEY(code))?;
+            }
+        }
+
         //三个键
         u.enable(EventCode::EV_KEY(EV_KEY::BTN_LEFT))?;
         u.enable(EventCode::EV_KEY(EV_KEY::BTN_RIGHT))?;
@@ -148,6 +154,27 @@ impl FakeDevice {
             event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
             value: 0,
         })?;
+        Ok(())
+    }
+
+    // Keyboard
+
+    pub fn keyboard(&self, keycode: u16, state: i32, time: TimeVal) -> Result<()> {
+        if let Some(code) = helper::scancode_to_keycode(keycode) {
+            self.dev.write_event(&InputEvent {
+                time,
+                event_code: EventCode::EV_KEY(code),
+                value: state as i32,
+            })?;
+            self.dev.write_event(&InputEvent {
+                time,
+                event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
+                value: 0,
+            })?;
+            // trace!("Press: {}", keycode);
+        } else {
+                warn!("Unknown key: {}", keycode);
+        }
         Ok(())
     }
 

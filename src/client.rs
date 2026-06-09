@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use log::{info};
+use log::{info, error};
 use crate::handler;
 use crate::dev;
 
@@ -120,7 +120,11 @@ impl DeskflowClient {
             match self.read_from_server() {
                 Ok(msg) => {
                     if let Err(e) = handler::handle_message(&msg, self) {
-                        return Err(e);
+                        if cfg!(debug_assertions) {
+                            error!("Runtime error:{}", e);
+                        } else {
+                            return Err(e);
+                        }
                     }
                 }
                 Err(e) => {
