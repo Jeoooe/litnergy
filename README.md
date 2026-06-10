@@ -1,5 +1,5 @@
 # Litnergy
-[English](README-en.md)
+[English](README.en.md)
 [简体中文](README.md)
 
 一个主要用于Deskflow的命令行客户端, 主要解决deskflow客户端模式在部分linux de或wm（主要是wayland协议的wm）下不一定正常运作的问题。 ~~(但其实我也没试过deskflow客户端, 只是deskflow的known issue写了不支持)~~

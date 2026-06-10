@@ -1,4 +1,6 @@
 # Litnergy
+[English](README.en.md)
+[简体中文](README.md)
 
 This is a simple deskflow client intended for some linux users whose de or wm not supported by official Deskflow application. 
 
