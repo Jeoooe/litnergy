@@ -1,4 +1,4 @@
-use std::io::ErrorKind;
+use std::{collections::HashSet, io::ErrorKind};
 use log::{warn};
 use evdev_rs::{
     AbsInfo, DeviceWrapper, EnableCodeData, InputEvent, TimeVal, UInputDevice, UninitDevice, enums::*
@@ -11,6 +11,12 @@ pub const ZERO_TIMEVAL: TimeVal = TimeVal::new(0, 0);
 #[derive(Debug)]
 pub struct FakeDevice {
     dev: UInputDevice,
+    pressed_keys: HashSet<EV_KEY>,
+}
+
+pub enum KeyState {
+    UP = 0,
+    DOWN = 1,
 }
 
 type Result<T> = std::io::Result<T>;
@@ -75,7 +81,7 @@ impl FakeDevice {
 
         // Attempt to create UInputDevice from UninitDevice
         let dev = UInputDevice::create_from_device(&u)?;
-        Ok( Self { dev } )
+        Ok( Self { dev, pressed_keys: HashSet::with_capacity(128) } )
     }
 
     #[allow(unused)]
@@ -121,14 +127,14 @@ impl FakeDevice {
         matches!(button, EV_KEY::BTN_LEFT | EV_KEY::BTN_RIGHT | EV_KEY::BTN_MIDDLE)
     }
 
-    pub fn button(&self, button: EV_KEY, state: i32, time: TimeVal) -> std::io::Result<()> {
+    pub fn button(&self, button: EV_KEY, state: KeyState, time: TimeVal) -> std::io::Result<()> {
         if !Self::check_button(button) {
             return Err(std::io::Error::new(ErrorKind::InvalidData, "It is not a mouse button"));
         }
         self.dev.write_event(&InputEvent {
             time,
             event_code: EventCode::EV_KEY(button),
-            value: state,
+            value: state as i32,
         })?;
         self.dev.write_event(&InputEvent {
             time,
@@ -159,8 +165,14 @@ impl FakeDevice {
 
     // Keyboard
 
-    pub fn keyboard(&self, keycode: u16, state: i32, time: TimeVal) -> Result<()> {
+    pub fn keyboard(&mut self, keycode: u16, state: KeyState, time: TimeVal) -> Result<()> {
+        // 存在bug: 离开屏幕后按键不会弹起
+        // 决定维护一个按键表, COUT信号后清除所有按下的按键
         if let Some(code) = helper::scancode_to_keycode(keycode) {
+            match state {
+                KeyState::UP => self.pressed_keys.remove(&code),
+                KeyState::DOWN => self.pressed_keys.insert(code),
+            };
             self.dev.write_event(&InputEvent {
                 time,
                 event_code: EventCode::EV_KEY(code),
@@ -175,6 +187,24 @@ impl FakeDevice {
         } else {
                 warn!("Unknown key: {}", keycode);
         }
+        Ok(())
+    }
+
+    /// 离开屏幕时调用, 清空所有按下的按键
+    pub fn leave_screen(&mut self) -> Result<()> {
+        for key in self.pressed_keys.iter() {
+            self.dev.write_event(&InputEvent {
+                time: ZERO_TIMEVAL,
+                event_code: EventCode::EV_KEY(*key),
+                value: 0,
+            })?;
+        }
+        self.pressed_keys.clear();
+        self.dev.write_event(&InputEvent {
+            time: ZERO_TIMEVAL,
+            event_code: EventCode::EV_SYN(EV_SYN::SYN_REPORT),
+            value: 0,
+        })?;
         Ok(())
     }
 

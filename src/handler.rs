@@ -4,7 +4,7 @@ use evdev_rs::enums::EV_KEY;
 use log::{trace, warn};
 
 use crate::{
-    client::DeskflowClient, dev::ZERO_TIMEVAL, helper
+    client::DeskflowClient, dev::{KeyState, ZERO_TIMEVAL}, helper
 };
 
 // const CNOP: &[u8] = b"\x00\x00\x00\x04CNOP";
@@ -60,13 +60,13 @@ fn decode_mouse_button(code: u8) -> EV_KEY {
 
 // Mouse up
 fn handle_dmup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.fake_device.button(decode_mouse_button(msg[4]),0, ZERO_TIMEVAL)?;
+    client.fake_device.button(decode_mouse_button(msg[4]),KeyState::UP, ZERO_TIMEVAL)?;
     Ok(())
 }
 
 // Mouse Press
 fn handle_dmdn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.fake_device.button(decode_mouse_button(msg[4]),1, ZERO_TIMEVAL)?;
+        client.fake_device.button(decode_mouse_button(msg[4]),KeyState::DOWN, ZERO_TIMEVAL)?;
     Ok(())
 }
 
@@ -98,14 +98,14 @@ fn handle_dkdl(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let mut code = [0u8; 2];
     code.copy_from_slice(&msg[8..10]);
     let keycode = u16::from_be_bytes(code);
-    client.fake_device.keyboard(keycode, 1, ZERO_TIMEVAL)
+    client.fake_device.keyboard(keycode, KeyState::DOWN, ZERO_TIMEVAL)
 }
 
 fn handle_dkup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let mut code = [0u8; 2];
     code.copy_from_slice(&msg[8..10]);
     let keycode = u16::from_be_bytes(code);
-    client.fake_device.keyboard(keycode, 0, ZERO_TIMEVAL)
+    client.fake_device.keyboard(keycode, KeyState::UP, ZERO_TIMEVAL)
 }
 
 fn handle_qinf(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
@@ -142,8 +142,9 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let abs_x = i16::from_be_bytes(code);
     code.clone_from_slice(&msg[6..8]);
     let abs_y = i16::from_be_bytes(code);
-    code.clone_from_slice(&msg[12..14]);
-    let key_mask = u16::from_be_bytes(code);
+    // 我习惯上不去同步状态键
+    // code.clone_from_slice(&msg[12..14]);
+    // let key_mask = u16::from_be_bytes(code);
     let mut code = [0u8;4];
     code.clone_from_slice(&msg[8..12]);
     let sequence = u32::from_be_bytes(code);
@@ -156,9 +157,9 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
 }
 
 // Leave Screen
-fn handle_cout(_msg: &[u8], _client: &mut DeskflowClient) -> std::io::Result<()> {
+fn handle_cout(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     // TODO: send clipboard
-    Ok(())
+    client.fake_device.leave_screen()
 }
 
 fn handle_eunk(_msg: &[u8], _client: &mut DeskflowClient) -> std::io::Result<()> {

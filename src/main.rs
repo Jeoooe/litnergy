@@ -13,7 +13,7 @@ const DEFAULT_PORT: u16 = 24800;
 
 #[derive(Parser)]
 #[command(name = "litnergy")]
-#[command(version = "0.1")]
+#[command(version = "1.0.1")]
 #[command(about = "A Deskflow client based on uinput.", long_about = None)]
 struct Cli {
     #[arg(long)]
