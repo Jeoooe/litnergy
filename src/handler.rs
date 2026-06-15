@@ -1,19 +1,32 @@
+use std::{thread, time::Duration};
 // use std::net::TcpStream;
 use log::{trace, warn};
 
 use crate::{
-    client::DeskflowClient, dev::{KeyState, ButtonType}, helper
+    client::DeskflowClient,
+    dev::{ButtonType, KeyState},
+    helper,
 };
 
 // const CNOP: &[u8] = b"\x00\x00\x00\x04CNOP";
 const CALV_CODE: &[u8] = b"\x00\x00\x00\x04CALV";
+const MAX_REPEAT_EVENTS_PER_PACKET: u16 = 3;
+const REPEAT_EVENT_DELAY: Duration = Duration::from_millis(28);
+
+fn read_u16(msg: &[u8], offset: usize) -> std::io::Result<u16> {
+    let bytes = msg
+        .get(offset..offset + 2)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "short message"))?;
+
+    Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+}
 
 pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     // trace!("收到消息: {:?}", msg);
     match &msg[..4] {
         b"QINF" => handle_qinf(msg, client),
         b"CIAK" => Ok(()),
-        b"LSYN" | b"CROP" | b"DSOP" => Ok(()), //全都未完成, 
+        b"LSYN" | b"CROP" | b"DSOP" | b"DCLP" => Ok(()), //全都未完成,
         b"CALV" => handle_calv(msg, client),
         b"DMMV" => handle_dmmv(msg, client),
         b"CINN" => handle_cinn(msg, client),
@@ -24,22 +37,21 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
         b"EUNK" => handle_eunk(msg, client),
         b"DKDL" => handle_dkdl(msg, client),
         b"DKUP" => handle_dkup(msg, client),
-        b"DKRP" => Ok(()), // 重复按键由内核完成, 无需上报
-        _ => {  
+        b"DKRP" => handle_dkrp(msg, client),
+        _ => {
             let code = msg[..4].to_vec();
             if let Ok(code) = String::from_utf8(code) {
                 trace!("未编码消息: {}", code);
             }
             trace!("原始消息: {:?}", msg);
-            
+
             Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "未知信息",
+                std::io::ErrorKind::InvalidData,
+                "未知信息",
             ))
-        },
+        }
     }
 }
-
 
 fn decode_mouse_button(code: u8) -> ButtonType {
     // * **Button IDs**:
@@ -53,18 +65,22 @@ fn decode_mouse_button(code: u8) -> ButtonType {
         2 => ButtonType::Middle,
         3 => ButtonType::Right,
         _ => ButtonType::Extra,
-    } 
+    }
 }
 
 // Mouse up
 fn handle_dmup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.fake_device.button(decode_mouse_button(msg[4]),KeyState::UP)?;
+    client
+        .fake_device
+        .button(decode_mouse_button(msg[4]), KeyState::UP)?;
     Ok(())
 }
 
 // Mouse Press
 fn handle_dmdn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-        client.fake_device.button(decode_mouse_button(msg[4]),KeyState::DOWN)?;
+    client
+        .fake_device
+        .button(decode_mouse_button(msg[4]), KeyState::DOWN)?;
     Ok(())
 }
 
@@ -90,7 +106,6 @@ fn handle_dmmv(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     client.fake_device.move_abs(abs_x as i32, abs_y as i32)
 }
 
-
 // Keyboards
 fn handle_dkdl(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let mut code = [0u8; 2];
@@ -104,6 +119,23 @@ fn handle_dkup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     code.copy_from_slice(&msg[8..10]);
     let keycode = u16::from_be_bytes(code);
     client.fake_device.keyboard(keycode, KeyState::UP)
+}
+
+fn handle_dkrp(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
+    let (repeat_count, keycode) = if msg.len() >= 12 {
+        (read_u16(msg, 8)?, read_u16(msg, 10)?)
+    } else {
+        (1, read_u16(msg, 8)?)
+    };
+
+    let repeat_count = repeat_count.min(MAX_REPEAT_EVENTS_PER_PACKET);
+    for index in 0..repeat_count {
+        client.fake_device.repeat_keyboard(keycode)?;
+        if index + 1 < repeat_count {
+            thread::sleep(REPEAT_EVENT_DELAY);
+        }
+    }
+    Ok(())
 }
 
 fn handle_qinf(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
@@ -143,7 +175,7 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     // 我习惯上不去同步状态键
     // code.clone_from_slice(&msg[12..14]);
     // let key_mask = u16::from_be_bytes(code);
-    let mut code = [0u8;4];
+    let mut code = [0u8; 4];
     code.clone_from_slice(&msg[8..12]);
     let sequence = u32::from_be_bytes(code);
 
@@ -165,7 +197,7 @@ fn handle_eunk(_msg: &[u8], _client: &mut DeskflowClient) -> std::io::Result<()>
     warn!("Please check spelling, server config, server host, or network.");
     warn!("Note: Server does not auto‑accept new clients – add this client manually first.");
     Err(std::io::Error::new(
-    std::io::ErrorKind::Other,
-    "Unknown client name",
+        std::io::ErrorKind::Other,
+        "Unknown client name",
     ))
 }
