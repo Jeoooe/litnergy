@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use log::{info, warn};
+use log::{info, trace, warn};
 
 use crate::client::DeskflowClient;
 
@@ -45,14 +45,26 @@ impl ClipboardState {
 
         self.expected_size = None;
         self.data.clear();
-        info!("Server grabbed clipboard.");
+        trace!("Server grabbed clipboard.");
         Ok(())
     }
 
+    #[allow(unreachable_code)]
     pub fn handle_clipboard_message(&mut self, msg: &[u8]) -> std::io::Result<()> {
+        // TODO 重点关照一下
+        // trace!("DCLP原始信息: {:?}", msg);
         let Some((id, _sequence, mark, data)) = decode_clipboard_chunk(msg)? else {
             return Ok(());
         };
+
+        // let msg_str = String::from_utf8(data.to_vec());
+        // if let Ok(msg) = msg_str {
+        //     trace!("sequence: {}, mark: {}, data: {}",_sequence, mark, msg);
+        // }
+        // return Ok(());
+
+        // todo!();
+
         if id != CLIPBOARD_ID {
             return Ok(());
         }
@@ -117,8 +129,8 @@ impl ClipboardState {
         match write_local_payload(&payload) {
             Ok(()) => {
                 match &payload {
-                    ClipboardPayload::Text(_) => info!("Received clipboard text from server."),
-                    ClipboardPayload::Bitmap(_) => info!("Received clipboard bitmap from server."),
+                    ClipboardPayload::Text(_) => trace!("Received clipboard text from server."),
+                    ClipboardPayload::Bitmap(_) => trace!("Received clipboard bitmap from server."),
                 }
                 self.last_remote_payload = Some(payload);
                 self.last_sent_payload = None;
@@ -140,6 +152,7 @@ impl ClipboardState {
 }
 
 pub fn send_local_payload(client: &mut DeskflowClient) -> std::io::Result<()> {
+    //TODO 发送clipboard
     let payload = match read_local_payload() {
         Ok(Some(payload)) => payload,
         Ok(None) => return Ok(()),
@@ -300,11 +313,12 @@ fn extract_payload(data: &[u8]) -> std::io::Result<Option<ClipboardPayload>> {
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
             );
         } else if format == FORMAT_BITMAP {
-            let bitmap = data[offset..end].to_vec();
-            if is_valid_dib(&bitmap) {
-                return Ok(Some(ClipboardPayload::Bitmap(bitmap)));
-            }
-            warn!("Ignoring malformed bitmap clipboard payload from server.");
+            // let bitmap = data[offset..end].to_vec();
+            // if is_valid_dib(&bitmap) {
+            //     return Ok(Some(ClipboardPayload::Bitmap(bitmap)));
+            // }
+            // warn!("Ignoring malformed bitmap clipboard payload from server.");
+            warn!("Ignore images");
         }
         offset = end;
     }
@@ -332,74 +346,26 @@ fn read_local_payload() -> std::io::Result<Option<ClipboardPayload>> {
 }
 
 fn read_local_text() -> std::io::Result<Option<String>> {
-    for command in [
-        &["wl-paste", "--no-newline", "--type", "text/plain"][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-out",
-            "-target",
-            "UTF8_STRING",
-        ][..],
-        &["xsel", "--clipboard", "--output"][..],
-    ] {
-        if let Ok(output) = Command::new(command[0]).args(&command[1..]).output() {
-            if output.status.success() {
-                return String::from_utf8(output.stdout)
-                    .map(|text| Some(normalize_text(text)))
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
-            }
+    const COMMAND: [&str; 4] = ["wl-paste", "--no-newline", "--type", "text/plain"];
+    if let Ok(output) = Command::new(COMMAND[0]).args(&COMMAND[1..]).output() {
+        if output.status.success() {
+            return String::from_utf8(output.stdout)
+                .map(|text| Some(normalize_text(text)))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e));
         }
     }
     Ok(None)
 }
 
 fn read_local_bitmap() -> std::io::Result<Option<Vec<u8>>> {
-    for command in [
-        &["wl-paste", "--type", "image/bmp"][..],
-        &["wl-paste", "--type", "image/x-MS-bmp"][..],
-        &["wl-paste", "--type", "image/x-bmp"][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-out",
-            "-target",
-            "image/bmp",
-        ][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-out",
-            "-target",
-            "image/x-MS-bmp",
-        ][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-out",
-            "-target",
-            "image/x-bmp",
-        ][..],
-    ] {
-        if let Some(dib) = read_bitmap_command(command)? {
-            return Ok(Some(dib));
-        }
+    todo!("Nothing");
+    const COMMAND: [&str; 3] = ["wl-paste", "--type", "image/bmp"];
+    if let Some(dib) = read_bitmap_command(&COMMAND)? {
+        return Ok(Some(dib));
     }
 
     for command in [
         &["wl-paste", "--type", "image/png"][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-out",
-            "-target",
-            "image/png",
-        ][..],
     ] {
         if let Some(png) = read_bytes_command(command)? {
             if let Ok(Some(bmp)) = convert_image_to_bmp(&png, "png") {
@@ -441,21 +407,9 @@ fn write_local_payload(payload: &ClipboardPayload) -> std::io::Result<()> {
 }
 
 fn write_local_text(text: &str) -> std::io::Result<()> {
-    for command in [
-        &["wl-copy", "--type", "text/plain;charset=utf-8"][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-in",
-            "-target",
-            "UTF8_STRING",
-        ][..],
-        &["xsel", "--clipboard", "--input"][..],
-    ] {
-        if write_to_command(command, text).is_ok() {
-            return Ok(());
-        }
+    const COMMAND: &[&str] = &["wl-copy", "--type", "text/plain;charset=utf-8"];
+    if write_to_command(COMMAND, text).is_ok() {
+        return Ok(());
     }
 
     Err(std::io::Error::new(
