@@ -174,8 +174,8 @@ pub fn send_local_payload(client: &mut DeskflowClient) -> std::io::Result<()> {
     send_grab(client)?;
     send_payload(client, &payload)?;
     match &payload {
-        ClipboardPayload::Text(_) => info!("Sent clipboard text to server."),
-        ClipboardPayload::Bitmap(_) => info!("Sent clipboard bitmap to server."),
+        ClipboardPayload::Text(_) => trace!("Sent clipboard text to server."),
+        ClipboardPayload::Bitmap(_) => trace!("Sent clipboard bitmap to server."),
     }
     client.clipboard.remember_sent_payload(payload);
     Ok(())
@@ -313,12 +313,15 @@ fn extract_payload(data: &[u8]) -> std::io::Result<Option<ClipboardPayload>> {
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
             );
         } else if format == FORMAT_BITMAP {
-            // let bitmap = data[offset..end].to_vec();
-            // if is_valid_dib(&bitmap) {
-            //     return Ok(Some(ClipboardPayload::Bitmap(bitmap)));
-            // }
+            let bitmap = data[offset..end].to_vec();
+            if is_valid_dib(&bitmap) {
+                return Ok(Some(ClipboardPayload::Bitmap(bitmap)));
+            }
+            trace!("Receive bitmap");
             // warn!("Ignoring malformed bitmap clipboard payload from server.");
-            warn!("Ignore images");
+            // trace!("Receive bitmap: {:?}", &data[offset..end]);
+            // trace!("Receive bitmap, header: {:?}, info: {:?}", &data[offset..offset+14], &data[offset+14..offset+54]);
+            // warn!("Ignore images");
         }
         offset = end;
     }
@@ -346,7 +349,8 @@ fn read_local_payload() -> std::io::Result<Option<ClipboardPayload>> {
 }
 
 fn read_local_text() -> std::io::Result<Option<String>> {
-    const COMMAND: [&str; 4] = ["wl-paste", "--no-newline", "--type", "text/plain"];
+    // const COMMAND: [&str; 4] = ["wl-paste", "--no-newline", "--type", "text/plain"];
+    const COMMAND: [&str; 4] = ["wl-paste", "--no-newline", "--type", "text"];
     if let Ok(output) = Command::new(COMMAND[0]).args(&COMMAND[1..]).output() {
         if output.status.success() {
             return String::from_utf8(output.stdout)
@@ -358,25 +362,26 @@ fn read_local_text() -> std::io::Result<Option<String>> {
 }
 
 fn read_local_bitmap() -> std::io::Result<Option<Vec<u8>>> {
-    todo!("Nothing");
     const COMMAND: [&str; 3] = ["wl-paste", "--type", "image/bmp"];
     if let Some(dib) = read_bitmap_command(&COMMAND)? {
         return Ok(Some(dib));
     }
 
-    for command in [
-        &["wl-paste", "--type", "image/png"][..],
-    ] {
-        if let Some(png) = read_bytes_command(command)? {
-            if let Ok(Some(bmp)) = convert_image_to_bmp(&png, "png") {
-                if let Some(dib) = bmp_to_dib(&bmp) {
-                    if is_valid_dib(&dib) {
-                        return Ok(Some(dib));
-                    }
-                }
-            }
-        }
-    }
+    // png 先不管了
+    //
+    // for command in [
+    //     &["wl-paste", "--type", "image/png"][..],
+    // ] {
+    //     if let Some(png) = read_bytes_command(command)? {
+    //         if let Ok(Some(bmp)) = convert_image_to_bmp(&png, "png") {
+    //             if let Some(dib) = bmp_to_dib(&bmp) {
+    //                 if is_valid_dib(&dib) {
+    //                     return Ok(Some(dib));
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     Ok(None)
 }
@@ -420,48 +425,20 @@ fn write_local_text(text: &str) -> std::io::Result<()> {
 
 fn write_local_bitmap(bitmap: &[u8]) -> std::io::Result<()> {
     let bmp = dib_to_bmp(bitmap);
-    for command in [
-        &["wl-copy", "--type", "image/bmp"][..],
-        &["wl-copy", "--type", "image/x-MS-bmp"][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-in",
-            "-target",
-            "image/bmp",
-        ][..],
-        &[
-            "xclip",
-            "-selection",
-            "clipboard",
-            "-in",
-            "-target",
-            "image/x-MS-bmp",
-        ][..],
-    ] {
-        if write_bytes_to_command(command, &bmp).is_ok() {
-            return Ok(());
-        }
+    let command = &["wl-copy", "--type", "image/bmp"];
+
+    if write_bytes_to_command(command, &bmp).is_ok() {
+        return Ok(());
     }
 
-    if let Ok(Some(png)) = convert_bmp_to_image(&bmp, "png") {
-        for command in [
-            &["wl-copy", "--type", "image/png"][..],
-            &[
-                "xclip",
-                "-selection",
-                "clipboard",
-                "-in",
-                "-target",
-                "image/png",
-            ][..],
-        ] {
-            if write_bytes_to_command(command, &png).is_ok() {
-                return Ok(());
-            }
-        }
-    }
+    // 这里就先不转了
+    //
+    // if let Ok(Some(png)) = convert_bmp_to_image(&bmp, "png") {
+    //     let command = &["wl-copy", "--type", "image/png"];
+    //     if write_bytes_to_command(command, &png).is_ok() {
+    //         return Ok(());
+    //     }
+    // }
 
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
