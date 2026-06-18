@@ -161,8 +161,8 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
 
 // Leave Screen
 fn handle_cout(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    if let Err(e) = clipboard::send_local_text(client) {
-        warn!("Failed to send clipboard text: {}", e);
+    if let Err(e) = clipboard::send_local_payload(client) {
+        warn!("Failed to send clipboard: {}", e);
     }
     client.fake_device.leave_screen()
 }
