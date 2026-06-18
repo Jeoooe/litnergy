@@ -2,7 +2,10 @@
 use log::{trace, warn};
 
 use crate::{
-    client::DeskflowClient, dev::{KeyState, ButtonType}, helper
+    client::DeskflowClient,
+    clipboard,
+    dev::{ButtonType, KeyState},
+    helper,
 };
 
 // const CNOP: &[u8] = b"\x00\x00\x00\x04CNOP";
@@ -13,7 +16,9 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
     match &msg[..4] {
         b"QINF" => handle_qinf(msg, client),
         b"CIAK" => Ok(()),
-        b"LSYN" | b"CROP" | b"DSOP" => Ok(()), //全都未完成, 
+        b"LSYN" | b"CROP" | b"DSOP" => Ok(()), //全都未完成,
+        b"CCLP" => client.clipboard.handle_clipboard_grab(msg),
+        b"DCLP" => client.clipboard.handle_clipboard_message(msg),
         b"CALV" => handle_calv(msg, client),
         b"DMMV" => handle_dmmv(msg, client),
         b"CINN" => handle_cinn(msg, client),
@@ -156,7 +161,9 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
 
 // Leave Screen
 fn handle_cout(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    // TODO: send clipboard
+    if let Err(e) = clipboard::send_local_text(client) {
+        warn!("Failed to send clipboard text: {}", e);
+    }
     client.fake_device.leave_screen()
 }
 
