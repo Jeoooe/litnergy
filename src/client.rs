@@ -3,6 +3,7 @@ use std::net::TcpStream;
 use log::{info, error};
 use crate::handler;
 use crate::dev;
+use crate::clipboard;
 
 const PROTOCOL_MAJOR: i16 = 1;
 const PROTOCOL_MINOR: i16 = 8;
@@ -14,6 +15,7 @@ pub struct ScreenSize { pub x: u16, pub y: u16}
 #[derive(Debug)]
 pub struct DeskflowClient {
     stream: TcpStream,
+    pub clipboard: clipboard::ClipboardState,
     pub fake_device: dev::FakeDevice,
     pub enter_sequence: u32,
     pub screen_size: ScreenSize,
@@ -30,6 +32,7 @@ impl DeskflowClient {
         let stream = TcpStream::connect(addr)?;
         Ok( Self { 
             stream,
+            clipboard: clipboard::ClipboardState::default(),
             fake_device: mouse,
             enter_sequence: 0,
             screen_size,
