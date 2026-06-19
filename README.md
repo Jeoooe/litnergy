@@ -36,6 +36,9 @@ Options:
 
 ## Requirement
 <!-- You should make sure the following shared libs exist. -->
+剪贴板同步需要 `wl-clipboard` 功能, 不然会报错
+所以暂不支持x11 (x11建议直接用deskflow)
+
 确保你的系统安装了以下库:
 - `libevdev`
 
