@@ -36,8 +36,21 @@ Options:
 You should make sure the following shared libs exist.
 - `libevdev`
 
-## TODO
-- [x] Shared mouse
-- [x] Shared keyboard
-- [ ] Shared clipboard
-- [ ] Extra buttons of mouse or keys on keyboard
+## Changelog
+
+### v1.1.0
+Implemented clipboard synchronization for text and BMP image formats.
+
+May not support mixed text and image copying.
+
+### v1.0.0
+Basic keyboard and mouse sharing.
+
+No special handling for keypad, etc.; compatibility is limited.
+
+## Roadmap
+- [x] Mouse sharing
+- [x] Keyboard sharing
+- [x] Clipboard synchronization
+- [ ] Support for macOS
+- [ ] Support for mouse side buttons and more keyboard keys

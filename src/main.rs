@@ -8,6 +8,7 @@ mod handler;
 mod helper;
 mod dev;
 mod client;
+mod clipboard;
 
 const DEFAULT_PORT: u16 = 24800;
 

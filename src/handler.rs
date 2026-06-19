@@ -1,10 +1,11 @@
 // use std::net::TcpStream;
-
-use evdev_rs::enums::EV_KEY;
 use log::{trace, warn};
 
 use crate::{
-    client::DeskflowClient, dev::{KeyState, ZERO_TIMEVAL}, helper
+    client::DeskflowClient,
+    clipboard,
+    dev::{ButtonType, KeyState},
+    helper,
 };
 
 // const CNOP: &[u8] = b"\x00\x00\x00\x04CNOP";
@@ -15,7 +16,9 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
     match &msg[..4] {
         b"QINF" => handle_qinf(msg, client),
         b"CIAK" => Ok(()),
-        b"LSYN" | b"CROP" | b"DSOP" => Ok(()), //全都未完成, 
+        b"LSYN" | b"CROP" | b"DSOP" => Ok(()), //全都未完成,
+        b"CCLP" => client.clipboard.handle_clipboard_grab(msg),
+        b"DCLP" => client.clipboard.handle_clipboard_message(msg),
         b"CALV" => handle_calv(msg, client),
         b"DMMV" => handle_dmmv(msg, client),
         b"CINN" => handle_cinn(msg, client),
@@ -43,7 +46,7 @@ pub fn handle_message(msg: &[u8], client: &mut DeskflowClient) -> std::io::Resul
 }
 
 
-fn decode_mouse_button(code: u8) -> EV_KEY {
+fn decode_mouse_button(code: u8) -> ButtonType {
     // * **Button IDs**:
     // * - `1`: Left button
     // * - `2`: Right button
@@ -51,22 +54,22 @@ fn decode_mouse_button(code: u8) -> EV_KEY {
     // * - `4+`: Additional buttons (side buttons, etc.)
     // 这个好像是错的, 实际测试代码里的才应该是对的
     match code {
-        1 => EV_KEY::BTN_LEFT,
-        2 => EV_KEY::BTN_MIDDLE,
-        3 => EV_KEY::BTN_RIGHT,
-        _ => EV_KEY::BTN_EXTRA,
+        1 => ButtonType::Left,
+        2 => ButtonType::Middle,
+        3 => ButtonType::Right,
+        _ => ButtonType::Extra,
     } 
 }
 
 // Mouse up
 fn handle_dmup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    client.fake_device.button(decode_mouse_button(msg[4]),KeyState::UP, ZERO_TIMEVAL)?;
+    client.fake_device.button(decode_mouse_button(msg[4]),KeyState::UP)?;
     Ok(())
 }
 
 // Mouse Press
 fn handle_dmdn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-        client.fake_device.button(decode_mouse_button(msg[4]),KeyState::DOWN, ZERO_TIMEVAL)?;
+        client.fake_device.button(decode_mouse_button(msg[4]),KeyState::DOWN)?;
     Ok(())
 }
 
@@ -77,7 +80,7 @@ fn handle_dmwm(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let horizon = i16::from_be_bytes(code);
     code.clone_from_slice(&msg[6..8]);
     let vertical = i16::from_be_bytes(code);
-    client.fake_device.scroll(horizon, vertical, ZERO_TIMEVAL)
+    client.fake_device.scroll(horizon, vertical)
 }
 
 // Absolute Mouse Movement
@@ -89,7 +92,7 @@ fn handle_dmmv(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     code.clone_from_slice(&msg[6..8]);
     let abs_y = i16::from_be_bytes(code);
     // trace!("X: {}, Y: {}", abs_x, abs_y);
-    client.fake_device.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)
+    client.fake_device.move_abs(abs_x as i32, abs_y as i32)
 }
 
 
@@ -98,14 +101,14 @@ fn handle_dkdl(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let mut code = [0u8; 2];
     code.copy_from_slice(&msg[8..10]);
     let keycode = u16::from_be_bytes(code);
-    client.fake_device.keyboard(keycode, KeyState::DOWN, ZERO_TIMEVAL)
+    client.fake_device.keyboard(keycode, KeyState::DOWN)
 }
 
 fn handle_dkup(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     let mut code = [0u8; 2];
     code.copy_from_slice(&msg[8..10]);
     let keycode = u16::from_be_bytes(code);
-    client.fake_device.keyboard(keycode, KeyState::UP, ZERO_TIMEVAL)
+    client.fake_device.keyboard(keycode, KeyState::UP)
 }
 
 fn handle_qinf(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
@@ -149,7 +152,7 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
     code.clone_from_slice(&msg[8..12]);
     let sequence = u32::from_be_bytes(code);
 
-    client.fake_device.move_abs(abs_x as i32, abs_y as i32, ZERO_TIMEVAL)?;
+    client.fake_device.move_abs(abs_x as i32, abs_y as i32)?;
     client.enter_sequence = sequence;
     // TODO: KeyMask
     // Waiting for implementation of keyboard
@@ -158,7 +161,9 @@ fn handle_cinn(msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
 
 // Leave Screen
 fn handle_cout(_msg: &[u8], client: &mut DeskflowClient) -> std::io::Result<()> {
-    // TODO: send clipboard
+    if let Err(e) = clipboard::send_local_payload(client) {
+        warn!("Failed to send clipboard: {}", e);
+    }
     client.fake_device.leave_screen()
 }
 
